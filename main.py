@@ -1,7 +1,8 @@
 import logging
 from typing import Dict, Text
 import re
-from telegram import ReplyKeyboardMarkup, Update, ReplyKeyboardRemove, ChatMember, InlineKeyboardButton, InlineKeyboardMarkup
+import requests
+from telegram import ReplyKeyboardMarkup, Update, ReplyKeyboardRemove, ChatMember, InlineKeyboardButton, InlineKeyboardMarkup, chat
 from telegram.ext import (
     Updater,
     CommandHandler,
@@ -55,6 +56,8 @@ universities = [
 user_ads = [
     ['بازگشت به منو'],
 ]
+
+
 # markup
 main_menu_markup = ReplyKeyboardMarkup(main_keyboard,resize_keyboard=True)
 user_ads_markup = ReplyKeyboardMarkup(user_ads,resize_keyboard=True)
@@ -144,7 +147,7 @@ def back_to_main_menu(update: Update, context: CallbackContext) -> int:
         return JOIN
 
     update.message.reply_text(
-        "منو اصلی",
+        "منو",
         reply_markup=main_menu_markup,
     )
 
@@ -299,14 +302,60 @@ def choose_id_fn(update: Update,context:CallbackContext) -> int:
         )
         return ID
     else:
-        context.user_data['id'] = message
-        final_message = "#"+context.user_data['category']+"\n"+"#"+context.user_data['university']+"\n"+ context.user_data['text']+"\n"+context.user_data['id']
-        update.message.reply_text(
-            "متن نهایی آگهی شما به صورت زیر نمایش داده خواهد شد: \n"+ final_message,
-            reply_markup=user_ads_markup
-        )
-        return PAYMENT
+
+        # payment configs
         
+        update.message.reply_text(
+            "در حال ایجاد آگهی ..."
+        )
+        
+        response = requests.post(
+            "https://gateway.zibal.ir/v1/request",
+            json={'merchant':'zibal','amount':100000,'callbackUrl':"https://aversi.ir/verify"}
+            )
+        if response.json()['result']==100:
+            context.user_data['trackId'] = response.json()['trackId']
+            payment_kb = [
+                [
+                    InlineKeyboardButton("پرداخت بانکی",url="https://gateway.zibal.ir/start/{}".format(response.json()['trackId'])),
+                    InlineKeyboardButton("پرداخت با امتیاز", callback_data='freepay'),
+                ],
+                [InlineKeyboardButton("پرداخت کردم", callback_data='payed'),]
+            ]
+
+            payment_kb_markup = InlineKeyboardMarkup(payment_kb)
+
+
+            context.user_data['id'] = message
+            final_message = "#"+context.user_data['category']+"\n"+"#"+context.user_data['university']+"\n"+ context.user_data['text']+"\n"+context.user_data['id']
+            update.message.reply_text(
+                "متن نهایی آگهی شما به صورت زیر نمایش داده خواهد شد: \n"+ final_message,
+                reply_markup=payment_kb_markup
+            )
+            context.user_data['final_message'] = final_message
+            return PAYMENT
+
+def check_payment_fn(update: Update,context:CallbackContext):
+
+    query = update.callback_query
+    if query.data == "payed":
+        response = requests.post(
+            "https://gateway.zibal.ir/v1/verify",
+            json={'merchant':'zibal','trackId':context.user_data['trackId']}
+            )
+        print(response.json())
+        if response.json()['result']==100 and response.json()['status'] == 1:
+            context.bot.sendMessage(chat_id=CHANNEL_ID,text=context.user_data['final_message'])
+            query.message.reply_text(
+                "آگهی شما ثبت شد و بعد از تایید ادمین بلافاصله در کانال قرار میگیرد"
+            )
+        else:
+            context.bot.answerCallbackQuery(
+                query.id, "پرداخت نکرده اید و یا پرداختتان موفق نبوده با پشتیبانی در تماس باشید" +"\n"+"@dashtab", show_alert=True
+                )
+        return MAIN_MENU
+    else:
+        print('not payed')
 def regular_choice(update: Update, context: CallbackContext) -> int:
     text = update.message.text
     context.user_data['choice'] = text
@@ -358,6 +407,12 @@ def main() -> None:
                     Filters.text , choose_id_fn
                 ),
             ],
+            PAYMENT: [
+                MessageHandler(
+                    Filters.text, check_payment_fn
+                ),
+                CallbackQueryHandler(check_payment_fn)
+            ]
             # TYPING_CHOICE: [
             #     MessageHandler(
             #         Filters.text & ~(Filters.command | Filters.regex('^Done$')), regular_choice
