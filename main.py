@@ -1,7 +1,7 @@
 import logging
-from typing import Dict
+from typing import Dict, Text
 import re
-from telegram import ReplyKeyboardMarkup, Update, ReplyKeyboardRemove
+from telegram import ReplyKeyboardMarkup, Update, ReplyKeyboardRemove, ChatMember, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
     Updater,
     CommandHandler,
@@ -9,6 +9,7 @@ from telegram.ext import (
     Filters,
     ConversationHandler,
     CallbackContext,
+    CallbackQueryHandler
 )
 
 # Enable logging
@@ -18,10 +19,24 @@ logging.basicConfig(
 
 logger = logging.getLogger(__name__)
 
-MAIN_MENU, MANAGE_ADS,FREE_AD, NEW_AD, CHOOSE_CATEGORY, CHOOSE_UNIVERSITY, BACK_TO__MENU,CHOOSE_LOCATION,TEXT, ID, PAYMENT = range(11)
+# initialize states
+JOIN, MAIN_MENU, MANAGE_ADS,FREE_AD, NEW_AD, CHOOSE_CATEGORY, CHOOSE_UNIVERSITY, BACK_TO__MENU,CHOOSE_LOCATION,TEXT, ID, PAYMENT = range(12)
 
+# channel information
+CHANNEL_ID = "@tempchann"
+
+# messages
 GREETING_MESSAGE = "سلام"+"\n"+"به ربات خوش آمدید"
 POLICY_MESSAGE = "لطفا ابتدا قوانین را بخوانید"
+
+# keyboard and matkup definitions 
+# keyboard
+join_channel = [
+    [
+        InlineKeyboardButton("عضویت در کانال", callback_data='1',url="https://t.me/tempchann"),
+        InlineKeyboardButton("عضو شدم", callback_data='joined'),
+    ],
+]
 
 main_keyboard = [
     ['مدیریت آگهی ها 🗄', 'ثبت آگهی جدید 📋'],
@@ -32,22 +47,22 @@ categories = [
     ["خریدار", "فروشنده"],
     ["فرصت شغلی"],
 ]
-
 universities = [
     ["تهران", " شهید بهشتی"],
     ["علم و صنعت", "شریف"],
     ["دیگر"],
 ]
-
 user_ads = [
     ['بازگشت به منو'],
 ]
-
-
+# markup
 main_menu_markup = ReplyKeyboardMarkup(main_keyboard,resize_keyboard=True)
 user_ads_markup = ReplyKeyboardMarkup(user_ads,resize_keyboard=True)
 categories_markup = ReplyKeyboardMarkup(categories,resize_keyboard=True)
 universities_markup = ReplyKeyboardMarkup(universities,resize_keyboard=True)
+join_channel_markup = InlineKeyboardMarkup(join_channel)
+
+
 # def facts_to_str(user_data: Dict[str, str]) -> str:
 #     facts = list()
 
@@ -57,15 +72,77 @@ universities_markup = ReplyKeyboardMarkup(universities,resize_keyboard=True)
 #     return "\n".join(facts).join(['\n', '\n'])
 
 
-def start(update: Update, _: CallbackContext) -> int:
-    update.message.reply_text(
-        GREETING_MESSAGE,
-        reply_markup=main_menu_markup,
-    )
+def start(update: Update, context: CallbackContext) -> int:
 
-    return MAIN_MENU
+    user_id = update.message.from_user.id
+    result = context.bot.get_chat_member(chat_id=CHANNEL_ID,user_id=user_id)
 
-def back_to_main_menu(update: Update, _: CallbackContext) -> int:
+    if result['status'] != "member":
+
+        update.message.reply_text(
+            'ابتدا در کانال عضو شوید',
+            reply_markup=join_channel_markup
+            )
+
+        return JOIN
+    else:
+        update.message.reply_text(
+            GREETING_MESSAGE,
+            reply_markup=main_menu_markup,
+        )
+    
+        return MAIN_MENU
+
+def join_channel_fn(update: Update, context: CallbackContext) -> int:
+
+    if update.message != None:
+        user_id = update.message.from_user.id
+        result = context.bot.get_chat_member(chat_id=CHANNEL_ID,user_id=user_id)
+
+        if result['status'] != "member":
+
+            update.message.reply_text(
+                'ابتدا در کانال عضو شوید',
+                reply_markup=join_channel_markup
+                )
+
+            return JOIN
+
+    query = update.callback_query
+    user_id = query.from_user.id
+    if query.data == 'joined':
+        result = context.bot.get_chat_member(chat_id=CHANNEL_ID,user_id=user_id)
+        if result['status'] != "member":
+            context.bot.answerCallbackQuery(query.id, "هنوز عضو کانال نشده اید", show_alert=True)
+        else:
+            query.message.reply_text(
+                GREETING_MESSAGE,
+                reply_markup=main_menu_markup,
+            )
+        
+            return MAIN_MENU
+    else:
+        query.message.reply_text(
+            'ابتدا در کانال عضو شوید',
+            reply_markup=join_channel_markup
+            )
+
+        return JOIN    
+
+def back_to_main_menu(update: Update, context: CallbackContext) -> int:
+
+    user_id = update.message.from_user.id
+    result = context.bot.get_chat_member(chat_id=CHANNEL_ID,user_id=user_id)
+
+    if result['status'] != "member":
+
+        update.message.reply_text(
+            'ابتدا در کانال عضو شوید',
+            reply_markup=join_channel_markup
+            )
+
+        return JOIN
+
     update.message.reply_text(
         "منو اصلی",
         reply_markup=main_menu_markup,
@@ -75,6 +152,19 @@ def back_to_main_menu(update: Update, _: CallbackContext) -> int:
     
 
 def main_menu_fn(update: Update, context: CallbackContext) -> int:
+
+    user_id = update.message.from_user.id
+    result = context.bot.get_chat_member(chat_id=CHANNEL_ID,user_id=user_id)
+
+    if result['status'] != "member":
+
+        update.message.reply_text(
+            'ابتدا در کانال عضو شوید',
+            reply_markup=join_channel_markup
+            )
+
+        return JOIN
+
     message = update.message.text   
     if message == main_keyboard[0][0]:
         update.message.reply_text(
@@ -102,7 +192,20 @@ def main_menu_fn(update: Update, context: CallbackContext) -> int:
         
         return FREE_AD
 
-def manage_ads_fn(undate:Update,context:CallbackContext) -> int:
+def manage_ads_fn(undate: Update,context:CallbackContext) -> int:
+
+    user_id = update.message.from_user.id
+    result = context.bot.get_chat_member(chat_id=CHANNEL_ID,user_id=user_id)
+
+    if result['status'] != "member":
+
+        update.message.reply_text(
+            'ابتدا در کانال عضو شوید',
+            reply_markup=join_channel_markup
+            )
+
+        return JOIN
+
     update.message.reply_text(
         "لیست آگهی های شما:",
     )
@@ -110,6 +213,18 @@ def manage_ads_fn(undate:Update,context:CallbackContext) -> int:
     return MAIN_MENU
 
 def choose_category_fn(update: Update,context:CallbackContext) -> int:
+
+    user_id = update.message.from_user.id
+    result = context.bot.get_chat_member(chat_id=CHANNEL_ID,user_id=user_id)
+    if result['status'] != "member":
+
+        update.message.reply_text(
+            'ابتدا در کانال عضو شوید',
+            reply_markup=join_channel_markup
+            )
+
+        return JOIN
+
     message = update.message.text
     context.user_data['category'] = message.replace(' ','_')
     update.message.reply_text(
@@ -119,6 +234,19 @@ def choose_category_fn(update: Update,context:CallbackContext) -> int:
     return CHOOSE_UNIVERSITY
 
 def choose_university_fn(update: Update,context:CallbackContext) -> int:
+
+    user_id = update.message.from_user.id
+    result = context.bot.get_chat_member(chat_id=CHANNEL_ID,user_id=user_id)
+
+    if result['status'] != "member":
+
+        update.message.reply_text(
+            'ابتدا در کانال عضو شوید',
+            reply_markup=join_channel_markup
+            )
+
+        return JOIN
+
     message = update.message.text
     context.user_data['university'] = message.replace(' ','_')
     update.message.reply_text(
@@ -128,6 +256,19 @@ def choose_university_fn(update: Update,context:CallbackContext) -> int:
     return TEXT
 
 def choose_text_fn(update: Update,context:CallbackContext) -> int:
+
+    user_id = update.message.from_user.id
+    result = context.bot.get_chat_member(chat_id=CHANNEL_ID,user_id=user_id)
+
+    if result['status'] != "member":
+
+        update.message.reply_text(
+            'ابتدا در کانال عضو شوید',
+            reply_markup=join_channel_markup
+            )
+
+        return JOIN
+
     message = update.message.text
     context.user_data['text'] = message
     update.message.reply_text(
@@ -137,6 +278,19 @@ def choose_text_fn(update: Update,context:CallbackContext) -> int:
     return ID
 
 def choose_id_fn(update: Update,context:CallbackContext) -> int:
+
+    user_id = update.message.from_user.id
+    result = context.bot.get_chat_member(chat_id=CHANNEL_ID,user_id=user_id)
+
+    if result['status'] != "member":
+
+        update.message.reply_text(
+            'ابتدا در کانال عضو شوید',
+            reply_markup=join_channel_markup
+            )
+
+        return JOIN
+
     message = update.message.text
     if not bool(re.match(r"^@[A-Za-z0-9_.]{3,}", message)):
         update.message.reply_text(
@@ -151,54 +305,12 @@ def choose_id_fn(update: Update,context:CallbackContext) -> int:
             "متن نهایی آگهی شما به صورت زیر نمایش داده خواهد شد: \n"+ final_message,
             reply_markup=user_ads_markup
         )
-
+        return PAYMENT
         
 def regular_choice(update: Update, context: CallbackContext) -> int:
     text = update.message.text
     context.user_data['choice'] = text
     update.message.reply_text(f'Your {text.lower()}? Yes, I would love to hear about that!')
-
-#     return TYPING_REPLY
-
-
-# def custom_choice(update: Update, _: CallbackContext) -> int:
-#     update.message.reply_text(
-#         'Alright, please send me the category first, for example "Most impressive skill"'
-#     )
-
-#     return TYPING_CHOICE
-
-
-# def received_information(update: Update, context: CallbackContext) -> int:
-#     user_data = context.user_data
-#     text = update.message.text
-#     category = user_data['choice']
-#     user_data[category] = text
-#     del user_data['choice']
-
-#     update.message.reply_text(
-#         "Neat! Just so you know, this is what you already told me:"
-#         f"{facts_to_str(user_data)} You can tell me more, or change your opinion"
-#         " on something.",
-#         reply_markup=markup,
-#     )
-
-#     return CHOOSING
-
-
-
-def done(update: Update, context: CallbackContext) -> int:
-    user_data = context.user_data
-    if 'choice' in user_data:
-        del user_data['choice']
-
-    update.message.reply_text(
-        f"I learned these facts about you: {facts_to_str(user_data)}Until next time!",
-        reply_markup=ReplyKeyboardRemove(),
-    )
-
-    user_data.clear()
-    return ConversationHandler.END
 
 
 def main() -> None:
@@ -210,6 +322,12 @@ def main() -> None:
     conv_handler = ConversationHandler(
         entry_points=[CommandHandler('start', start)],
         states={
+            JOIN: [
+                MessageHandler(
+                    Filters.text, join_channel_fn
+                ),
+                CallbackQueryHandler(join_channel_fn)
+            ],
             MAIN_MENU: [
                 MessageHandler(
                     Filters.regex('^(مدیریت آگهی ها 🗄|ثبت آگهی جدید 📋|ثبت آگهی رایگان 🆓)$'), main_menu_fn
@@ -219,31 +337,26 @@ def main() -> None:
                 MessageHandler(
                     Filters.regex('^$'), manage_ads_fn
                 ),
-                # MessageHandler(Filters.regex('^Something else...$'), custom_choice),
             ],    
             CHOOSE_CATEGORY: [
                 MessageHandler(
-                    Filters.regex('^(خریدار|فروشند|انجام کار|درخواست کار|فرصت شغلی)$') , choose_category_fn
+                    Filters.regex('^(خریدار|فروشنده|انجام دهنده|درخواست کننده|فرصت شغلی)$') , choose_category_fn
                 ),
-                # MessageHandler(Filters.regex('^Something else...$'), custom_choice),
             ],
             CHOOSE_UNIVERSITY: [
                 MessageHandler(
                     Filters.text & ~(Filters.command | Filters.regex('#فوری')) , choose_university_fn
                 ),
-                # MessageHandler(Filters.regex('^Something else...$'), custom_choice),
             ],
             TEXT: [
                 MessageHandler(
                     Filters.text , choose_text_fn
                 ),
-                # MessageHandler(Filters.regex('^Something else...$'), custom_choice),
             ],
             ID: [
                 MessageHandler(
                     Filters.text , choose_id_fn
                 ),
-                # MessageHandler(Filters.regex('^Something else...$'), custom_choice),
             ],
             # TYPING_CHOICE: [
             #     MessageHandler(
@@ -257,7 +370,7 @@ def main() -> None:
             #     )
             # ],
         },
-        fallbacks=[MessageHandler(Filters.regex('^بازگشت به منو$'), back_to_main_menu)],
+        fallbacks=[MessageHandler(Filters.regex('^بازگشت به منو$'), back_to_main_menu),CommandHandler('start', start)],
     )
 
     dispatcher.add_handler(conv_handler)
