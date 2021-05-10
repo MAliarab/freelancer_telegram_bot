@@ -147,8 +147,11 @@ def join_channel_fn(update: Update, context: CallbackContext) -> int:
     user_id = query.from_user.id
     if query.data == 'joined':
         result = context.bot.get_chat_member(chat_id=CHANNEL_ID,user_id=user_id)
+        print(result['status'])
         if result['status'] != "member" and result['status'] != 'creator':
-            context.bot.answerCallbackQuery(query.id, "هنوز عضو کانال نشده اید", show_alert=True)
+            print("not join")
+            res = context.bot.answer_callback_query(query.id, "هنوز عضو کانال نشده اید", show_alert=True)
+            print(res)
         else:
             query.message.reply_text(
                 GREETING_MESSAGE,
@@ -386,11 +389,9 @@ def choose_id_fn(update: Update,context:CallbackContext) -> int:
 def check_payment_fn(update: Update,context:CallbackContext):
 
     query = update.callback_query
-    print(query.data)
-    context.bot.answerCallbackQuery(
-                query.id, "پرداخت نکرده اید و یا پرداختتان موفق نبوده با پشتیبانی در تماس باشید" +"\n"+"@dashtab", show_alert=True
-                )
-    if query.data == "payed":
+    # print(query.id)
+    # print(query.data)
+    if query!=None and query.data == "payed":
         response = requests.post(
             "https://gateway.zibal.ir/v1/verify",
             json={'merchant':'zibal','trackId':context.user_data['trackId']}
@@ -403,21 +404,17 @@ def check_payment_fn(update: Update,context:CallbackContext):
             )
             return MAIN_MENU
         else:
-            context.bot.answerCallbackQuery(
-                query.id, "پرداخت نکرده اید و یا پرداختتان موفق نبوده با پشتیبانی در تماس باشید" +"\n"+"@dashtab", show_alert=True
+            query.bot.answer_callback_query(query.id,
+                text="پرداخت نکرده اید و یا پرداختتان موفق نبوده با پشتیبانی در تماس باشید" +"\n"+"@dashtab", show_alert=True
                 )
-            return PAYMENT
+            # return PAYMENT
+        
     else:
         print('not payed')
-def regular_choice(update: Update, context: CallbackContext) -> int:
-    text = update.message.text
-    context.user_data['choice'] = text
-    update.message.reply_text(f'Your {text.lower()}? Yes, I would love to hear about that!')
-
 
 def main() -> None:
     # Create the Updater and pass it your bot's token.
-    updater = Updater("453030525:AAFlLIRaMcFhZcKqZPKM-D52hl3B_10R5YE")
+    updater = Updater("453030525:AAF-ME2fRI3IHs9P6zVpYSZXeMImbqZGIjE")
     # Get the dispatcher to register handlers
     dispatcher = updater.dispatcher
     # Add conversation handler with the states CHOOSING, TYPING_CHOICE and TYPING_REPLY
@@ -431,36 +428,43 @@ def main() -> None:
                 CallbackQueryHandler(join_channel_fn)
             ],
             MAIN_MENU: [
+                CommandHandler('start', start),
                 MessageHandler(
                     Filters.regex('^(مدیریت آگهی ها 🗄|ثبت آگهی جدید 📋|ثبت آگهی رایگان 🆓)$'), main_menu_fn
                 ),
             ],
             MANAGE_ADS: [
+                CommandHandler('start', start),
                 MessageHandler(
                     Filters.regex('^مدیریت آگهی ها 🗄$'), manage_ads_fn
                 ),
             ],    
             CHOOSE_CATEGORY: [
+                CommandHandler('start', start),
                 MessageHandler(
                     Filters.regex('^(خریدار|فروشنده|انجام دهنده|درخواست کننده|فرصت شغلی)$') , choose_category_fn
                 ),
             ],
             CHOOSE_UNIVERSITY: [
+                CommandHandler('start', start),
                 MessageHandler(
                     Filters.text & ~(Filters.command | Filters.regex('#فوری')) , choose_university_fn
                 ),
             ],
             TEXT: [
+                CommandHandler('start', start),
                 MessageHandler(
                     Filters.text , choose_text_fn
                 ),
             ],
             ID: [
+                CommandHandler('start', start),
                 MessageHandler(
                     Filters.text , choose_id_fn
                 ),
             ],
             PAYMENT: [
+                CommandHandler('start', start),
                 MessageHandler(
                     Filters.text, check_payment_fn
                 ),
