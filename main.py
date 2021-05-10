@@ -2,6 +2,7 @@ import logging
 from typing import Dict, Text
 import re
 import requests
+import mysql.connector
 from telegram import ReplyKeyboardMarkup, Update, ReplyKeyboardRemove, ChatMember, InlineKeyboardButton, InlineKeyboardMarkup, chat
 from telegram.ext import (
     Updater,
@@ -20,18 +21,18 @@ logging.basicConfig(
 
 logger = logging.getLogger(__name__)
 
-# initialize states
+# Initialize states
 JOIN, MAIN_MENU, MANAGE_ADS,FREE_AD, NEW_AD, CHOOSE_CATEGORY, CHOOSE_UNIVERSITY, BACK_TO__MENU,CHOOSE_LOCATION,TEXT, ID, PAYMENT = range(12)
 
-# channel information
+# Channel and Bot information
 CHANNEL_ID = "@tempchann"
-
-# messages
+# Static messages
 GREETING_MESSAGE = "سلام"+"\n"+"به ربات خوش آمدید"
 POLICY_MESSAGE = "لطفا ابتدا قوانین را بخوانید"
 
-# keyboard and matkup definitions 
-# keyboard
+# Keyboard and matkup definitions 
+
+# Keyboard
 join_channel = [
     [
         InlineKeyboardButton("عضویت در کانال", callback_data='1',url="https://t.me/tempchann"),
@@ -42,6 +43,7 @@ join_channel = [
 main_keyboard = [
     ['مدیریت آگهی ها 🗄', 'ثبت آگهی جدید 📋'],
     ['ثبت آگهی رایگان 🆓'],
+    ['دیدن آگهی ها']
 ]
 categories = [
     ["انجام دهنده", "درخواست کننده"],
@@ -58,12 +60,22 @@ user_ads = [
 ]
 
 
-# markup
+# Markup
 main_menu_markup = ReplyKeyboardMarkup(main_keyboard,resize_keyboard=True)
 user_ads_markup = ReplyKeyboardMarkup(user_ads,resize_keyboard=True)
 categories_markup = ReplyKeyboardMarkup(categories,resize_keyboard=True)
 universities_markup = ReplyKeyboardMarkup(universities,resize_keyboard=True)
 join_channel_markup = InlineKeyboardMarkup(join_channel)
+
+
+# Database settings
+mydb = mysql.connector.connect(
+    database='karbotdb',
+    host="localhost",
+    user="karbotadmin",
+    password="458025166"
+)
+cursor = mydb.cursor()
 
 
 # def facts_to_str(user_data: Dict[str, str]) -> str:
@@ -75,12 +87,32 @@ join_channel_markup = InlineKeyboardMarkup(join_channel)
 #     return "\n".join(facts).join(['\n', '\n'])
 
 
+
+
+
 def start(update: Update, context: CallbackContext) -> int:
+    # TODO set invitation coin for user
+    # print(update.message.text.split(' ')[1])
+    # print(type(update.message.text.split(' ')[1]))
+    # ---------------------------------
+
 
     user_id = update.message.from_user.id
+    chat_id = update.message.chat.id
+    
+    # Add user to DB if there is not in DB
+    q1 = "SELECT * FROM users WHERE id={}".format(user_id)
+    cursor.execute(q1)
+    user = cursor.fetchall()
+    if len(user) == 0:
+        q2 = ("INSERT INTO users (id,coin,chat_id) VALUES (%s,%s,%s)")
+        values = (user_id,0,chat_id)
+        cursor.execute(q2,values)
+        mydb.commit()
+    
     result = context.bot.get_chat_member(chat_id=CHANNEL_ID,user_id=user_id)
-
-    if result['status'] != "member":
+    
+    if result['status'] != "member" and result['status'] != 'creator':
 
         update.message.reply_text(
             'ابتدا در کانال عضو شوید',
@@ -102,7 +134,7 @@ def join_channel_fn(update: Update, context: CallbackContext) -> int:
         user_id = update.message.from_user.id
         result = context.bot.get_chat_member(chat_id=CHANNEL_ID,user_id=user_id)
 
-        if result['status'] != "member":
+        if result['status'] != "member" and result['status'] != 'creator':
 
             update.message.reply_text(
                 'ابتدا در کانال عضو شوید',
@@ -115,7 +147,7 @@ def join_channel_fn(update: Update, context: CallbackContext) -> int:
     user_id = query.from_user.id
     if query.data == 'joined':
         result = context.bot.get_chat_member(chat_id=CHANNEL_ID,user_id=user_id)
-        if result['status'] != "member":
+        if result['status'] != "member" and result['status'] != 'creator':
             context.bot.answerCallbackQuery(query.id, "هنوز عضو کانال نشده اید", show_alert=True)
         else:
             query.message.reply_text(
@@ -137,7 +169,7 @@ def back_to_main_menu(update: Update, context: CallbackContext) -> int:
     user_id = update.message.from_user.id
     result = context.bot.get_chat_member(chat_id=CHANNEL_ID,user_id=user_id)
 
-    if result['status'] != "member":
+    if result['status'] != "member" and result['status'] != 'creator':
 
         update.message.reply_text(
             'ابتدا در کانال عضو شوید',
@@ -159,7 +191,7 @@ def main_menu_fn(update: Update, context: CallbackContext) -> int:
     user_id = update.message.from_user.id
     result = context.bot.get_chat_member(chat_id=CHANNEL_ID,user_id=user_id)
 
-    if result['status'] != "member":
+    if result['status'] != "member" and result['status'] != 'creator':
 
         update.message.reply_text(
             'ابتدا در کانال عضو شوید',
@@ -200,7 +232,7 @@ def manage_ads_fn(undate: Update,context:CallbackContext) -> int:
     user_id = update.message.from_user.id
     result = context.bot.get_chat_member(chat_id=CHANNEL_ID,user_id=user_id)
 
-    if result['status'] != "member":
+    if result['status'] != "member" and result['status'] != 'creator':
 
         update.message.reply_text(
             'ابتدا در کانال عضو شوید',
@@ -219,7 +251,7 @@ def choose_category_fn(update: Update,context:CallbackContext) -> int:
 
     user_id = update.message.from_user.id
     result = context.bot.get_chat_member(chat_id=CHANNEL_ID,user_id=user_id)
-    if result['status'] != "member":
+    if result['status'] != "member" and result['status'] != 'creator':
 
         update.message.reply_text(
             'ابتدا در کانال عضو شوید',
@@ -241,7 +273,7 @@ def choose_university_fn(update: Update,context:CallbackContext) -> int:
     user_id = update.message.from_user.id
     result = context.bot.get_chat_member(chat_id=CHANNEL_ID,user_id=user_id)
 
-    if result['status'] != "member":
+    if result['status'] != "member" and result['status'] != 'creator':
 
         update.message.reply_text(
             'ابتدا در کانال عضو شوید',
@@ -263,7 +295,7 @@ def choose_text_fn(update: Update,context:CallbackContext) -> int:
     user_id = update.message.from_user.id
     result = context.bot.get_chat_member(chat_id=CHANNEL_ID,user_id=user_id)
 
-    if result['status'] != "member":
+    if result['status'] != "member" and result['status'] != 'creator':
 
         update.message.reply_text(
             'ابتدا در کانال عضو شوید',
@@ -285,7 +317,7 @@ def choose_id_fn(update: Update,context:CallbackContext) -> int:
     user_id = update.message.from_user.id
     result = context.bot.get_chat_member(chat_id=CHANNEL_ID,user_id=user_id)
 
-    if result['status'] != "member":
+    if result['status'] != "member" and result['status'] != 'creator':
 
         update.message.reply_text(
             'ابتدا در کانال عضو شوید',
@@ -295,6 +327,7 @@ def choose_id_fn(update: Update,context:CallbackContext) -> int:
         return JOIN
 
     message = update.message.text
+
     if not bool(re.match(r"^@[A-Za-z0-9_.]{3,}", message)):
         update.message.reply_text(
             "آی دی باید با @ شروع و بیشتر از 3 کاراکتر انگلیسی باشد",
@@ -327,17 +360,36 @@ def choose_id_fn(update: Update,context:CallbackContext) -> int:
 
 
             context.user_data['id'] = message
-            final_message = "#"+context.user_data['category']+"\n"+"#"+context.user_data['university']+"\n"+ context.user_data['text']+"\n"+context.user_data['id']
+            final_message = "#"+context.user_data['category']+"\n"+"#"+context.user_data['university']+"\n"+ context.user_data['text']+"\n"+context.user_data['id']+"\n"+"----------------\n"+CHANNEL_ID
             update.message.reply_text(
                 "متن نهایی آگهی شما به صورت زیر نمایش داده خواهد شد: \n"+ final_message,
                 reply_markup=payment_kb_markup
             )
             context.user_data['final_message'] = final_message
+
+            # Add post to DB
+            query = "INSERT INTO posts (full_text,username,content,university,category,user_id,state) VALUES (%s,%s,%s,%s,%s,%s,%s)"
+            values = (
+                context.user_data['final_message'],
+                context.user_data['id'],
+                context.user_data['text'],
+                context.user_data['university'],
+                context.user_data['category'],
+                user_id,
+                PAYMENT
+                )
+            cursor.execute(query,values)
+            mydb.commit()
+            
             return PAYMENT
 
 def check_payment_fn(update: Update,context:CallbackContext):
 
     query = update.callback_query
+    print(query.data)
+    context.bot.answerCallbackQuery(
+                query.id, "پرداخت نکرده اید و یا پرداختتان موفق نبوده با پشتیبانی در تماس باشید" +"\n"+"@dashtab", show_alert=True
+                )
     if query.data == "payed":
         response = requests.post(
             "https://gateway.zibal.ir/v1/verify",
@@ -349,11 +401,12 @@ def check_payment_fn(update: Update,context:CallbackContext):
             query.message.reply_text(
                 "آگهی شما ثبت شد و بعد از تایید ادمین بلافاصله در کانال قرار میگیرد"
             )
+            return MAIN_MENU
         else:
             context.bot.answerCallbackQuery(
                 query.id, "پرداخت نکرده اید و یا پرداختتان موفق نبوده با پشتیبانی در تماس باشید" +"\n"+"@dashtab", show_alert=True
                 )
-        return MAIN_MENU
+            return PAYMENT
     else:
         print('not payed')
 def regular_choice(update: Update, context: CallbackContext) -> int:
@@ -384,7 +437,7 @@ def main() -> None:
             ],
             MANAGE_ADS: [
                 MessageHandler(
-                    Filters.regex('^$'), manage_ads_fn
+                    Filters.regex('^مدیریت آگهی ها 🗄$'), manage_ads_fn
                 ),
             ],    
             CHOOSE_CATEGORY: [

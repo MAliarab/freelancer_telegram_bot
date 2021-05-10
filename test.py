@@ -88,9 +88,36 @@
 
 
 
-import re
-import requests
+# import re
+# import requests
 
-result = requests.post("https://gateway.zibal.ir/v1/verify",json={'merchant':'zibal','trackId':227477489})
+# result = requests.post("https://gateway.zibal.ir/v1/verify",json={'merchant':'zibal','trackId':227477489})
 
-print(result.json())
+# print(result.json())
+
+import mysql.connector
+
+
+mydb = mysql.connector.connect(
+    database='karbotdb',
+    host="localhost",
+    user="karbotadmin",
+    password="458025166"
+)
+
+cursor = mydb.cursor()
+
+query = "INSERT INTO posts (full_text,username,category,user_id) VALUES (%s,%s,%s,%s)"
+vales = ('درود دوباره به شما','@haji','انجام کار ', 3)
+
+cursor.execute(query,vales)
+mydb.commit()
+
+query = "SELECT * FROM posts"
+
+cursor.execute(query)
+print(cursor.fetchall()[0][1])
+
+
+print(mydb.database)
+
