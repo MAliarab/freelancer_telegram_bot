@@ -1,6 +1,7 @@
 import logging
 from typing import Dict, Text
 import re
+from datetime import datetime, timedelta
 import requests
 import mysql.connector
 from telegram import ReplyKeyboardMarkup, Update, ReplyKeyboardRemove, ChatMember, InlineKeyboardButton, InlineKeyboardMarkup, chat
@@ -22,7 +23,7 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # Initialize states
-JOIN, MAIN_MENU, MANAGE_ADS,FREE_AD, NEW_AD, CHOOSE_CATEGORY, CHOOSE_UNIVERSITY, BACK_TO__MENU,CHOOSE_LOCATION,TEXT, ID, PAYMENT = range(12)
+JOIN, MAIN_MENU, MANAGE_ADS,FREE_AD, NEW_AD, CHOOSE_CATEGORY, CHOOSE_UNIVERSITY, BACK_TO__MENU,CHOOSE_LOCATION,TEXT, ID, PAYMENT, SHOW_ADS = range(13)
 
 # Channel and Bot information
 CHANNEL_ID = "@tempchann"
@@ -35,7 +36,7 @@ POLICY_MESSAGE = "لطفا ابتدا قوانین را بخوانید"
 # Keyboard
 join_channel = [
     [
-        InlineKeyboardButton("عضویت در کانال", callback_data='1',url="https://t.me/tempchann"),
+        InlineKeyboardButton("عضویت در کانال",url="https://t.me/tempchann"),
         InlineKeyboardButton("عضو شدم", callback_data='joined'),
     ],
 ]
@@ -59,14 +60,20 @@ user_ads = [
     ['بازگشت به منو'],
 ]
 
-
+show_ads_kb = [
+    [
+        InlineKeyboardButton("آگهی های ۱ روز اخیر", callback_data=1),
+        InlineKeyboardButton("آگهی های ۲ روز اخیر", callback_data=2),
+    ],
+    [InlineKeyboardButton("تمام آگهی ها", callback_data=5),]
+]
 # Markup
 main_menu_markup = ReplyKeyboardMarkup(main_keyboard,resize_keyboard=True)
 user_ads_markup = ReplyKeyboardMarkup(user_ads,resize_keyboard=True)
 categories_markup = ReplyKeyboardMarkup(categories,resize_keyboard=True)
 universities_markup = ReplyKeyboardMarkup(universities,resize_keyboard=True)
 join_channel_markup = InlineKeyboardMarkup(join_channel)
-
+show_ads_markup = InlineKeyboardMarkup(show_ads_kb)
 
 # Database settings
 mydb = mysql.connector.connect(
@@ -76,18 +83,6 @@ mydb = mysql.connector.connect(
     password="458025166"
 )
 cursor = mydb.cursor()
-
-
-# def facts_to_str(user_data: Dict[str, str]) -> str:
-#     facts = list()
-
-#     for key, value in user_data.items():
-#         facts.append(f'{key} - {value}')
-
-#     return "\n".join(facts).join(['\n', '\n'])
-
-
-
 
 
 def start(update: Update, context: CallbackContext) -> int:
@@ -147,11 +142,8 @@ def join_channel_fn(update: Update, context: CallbackContext) -> int:
     user_id = query.from_user.id
     if query.data == 'joined':
         result = context.bot.get_chat_member(chat_id=CHANNEL_ID,user_id=user_id)
-        print(result['status'])
         if result['status'] != "member" and result['status'] != 'creator':
-            print("not join")
             res = context.bot.answer_callback_query(query.id, "هنوز عضو کانال نشده اید", show_alert=True)
-            print(res)
         else:
             query.message.reply_text(
                 GREETING_MESSAGE,
@@ -204,12 +196,12 @@ def main_menu_fn(update: Update, context: CallbackContext) -> int:
         return JOIN
 
     message = update.message.text   
-    if message == main_keyboard[0][0]:
+    if message == main_keyboard[2][0]:
         update.message.reply_text(
-            "شما آگهی ثبت شده ای ندارید",
-            reply_markup=user_ads_markup
+            "تعداد آگهی هایی که میخواهید نمایش داده شود را انتخاب کنید",
+            reply_markup=show_ads_markup
         )
-        return MANAGE_ADS
+        return SHOW_ADS
     elif message == main_keyboard[0][1]:
         update.message.reply_text(
             POLICY_MESSAGE,
@@ -230,9 +222,32 @@ def main_menu_fn(update: Update, context: CallbackContext) -> int:
         
         return FREE_AD
 
-def manage_ads_fn(undate: Update,context:CallbackContext) -> int:
+def show_ads_fn(update: Update,context:CallbackContext) -> int:
 
-    user_id = update.message.from_user.id
+    query = update.callback_query
+    
+    date = datetime.now()-timedelta(days=int(query.data))
+    
+    q = "SELECT full_text from posts WHERE created_at >= '{}'".format(date)
+
+    cursor.execute(q)
+
+    posts = cursor.fetchall()
+    query.message.reply_text(
+        "لیست آگهی ها:",
+        reply_markup=user_ads_markup
+    )
+    for post in posts:
+        query.message.reply_text(
+            post[0]
+            
+        )
+    return SHOW_ADS
+
+
+def manage_ads_fn(update: Update,context:CallbackContext) -> int:
+    query = update.callback_query
+    user_id = query.from_user.id
     result = context.bot.get_chat_member(chat_id=CHANNEL_ID,user_id=user_id)
 
     if result['status'] != "member" and result['status'] != 'creator':
@@ -371,7 +386,7 @@ def choose_id_fn(update: Update,context:CallbackContext) -> int:
             context.user_data['final_message'] = final_message
 
             # Add post to DB
-            query = "INSERT INTO posts (full_text,username,content,university,category,user_id,state) VALUES (%s,%s,%s,%s,%s,%s,%s)"
+            query = "INSERT INTO posts (full_text,username,content,university,category,user_id,state,created_at) VALUES (%s,%s,%s,%s,%s,%s,%s,%s)"
             values = (
                 context.user_data['final_message'],
                 context.user_data['id'],
@@ -379,7 +394,8 @@ def choose_id_fn(update: Update,context:CallbackContext) -> int:
                 context.user_data['university'],
                 context.user_data['category'],
                 user_id,
-                PAYMENT
+                PAYMENT,
+                datetime.now()
                 )
             cursor.execute(query,values)
             mydb.commit()
@@ -396,7 +412,6 @@ def check_payment_fn(update: Update,context:CallbackContext):
             "https://gateway.zibal.ir/v1/verify",
             json={'merchant':'zibal','trackId':context.user_data['trackId']}
             )
-        print(response.json())
         if response.json()['result']==100 and response.json()['status'] == 1:
             context.bot.sendMessage(chat_id=CHANNEL_ID,text=context.user_data['final_message'])
             query.message.reply_text(
@@ -430,7 +445,7 @@ def main() -> None:
             MAIN_MENU: [
                 CommandHandler('start', start),
                 MessageHandler(
-                    Filters.regex('^(مدیریت آگهی ها 🗄|ثبت آگهی جدید 📋|ثبت آگهی رایگان 🆓)$'), main_menu_fn
+                    Filters.regex('^(مدیریت آگهی ها 🗄|ثبت آگهی جدید 📋|ثبت آگهی رایگان 🆓|دیدن آگهی ها)$'), main_menu_fn
                 ),
             ],
             MANAGE_ADS: [
@@ -438,7 +453,12 @@ def main() -> None:
                 MessageHandler(
                     Filters.regex('^مدیریت آگهی ها 🗄$'), manage_ads_fn
                 ),
-            ],    
+            ], 
+            SHOW_ADS: [
+                CallbackQueryHandler(show_ads_fn),
+                MessageHandler(Filters.regex('^بازگشت به منو$'),back_to_main_menu),
+
+            ],   
             CHOOSE_CATEGORY: [
                 CommandHandler('start', start),
                 MessageHandler(
@@ -465,9 +485,7 @@ def main() -> None:
             ],
             PAYMENT: [
                 CommandHandler('start', start),
-                MessageHandler(
-                    Filters.text, check_payment_fn
-                ),
+                MessageHandler(Filters.regex('^بازگشت به منو$'),back_to_main_menu),
                 CallbackQueryHandler(check_payment_fn)
             ]
             # TYPING_CHOICE: [

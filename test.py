@@ -96,8 +96,8 @@
 # print(result.json())
 
 import mysql.connector
-
-
+from datetime import datetime
+from datetime import timedelta
 mydb = mysql.connector.connect(
     database='karbotdb',
     host="localhost",
@@ -107,16 +107,19 @@ mydb = mysql.connector.connect(
 
 cursor = mydb.cursor()
 
-query = "INSERT INTO posts (full_text,username,category,user_id) VALUES (%s,%s,%s,%s)"
-vales = ('درود دوباره به شما','@haji','انجام کار ', 3)
+# query = "INSERT INTO posts (full_text,username,category,user_id) VALUES (%s,%s,%s,%s)"
+# vales = ('درود دوباره به شما','@haji','انجام کار ', 3)
 
-cursor.execute(query,vales)
-mydb.commit()
-
-query = "SELECT * FROM posts"
+# cursor.execute(query,vales)
+# mydb.commit()
+yesterday = datetime.now() - timedelta(days=1)
+print(yesterday.replace(microsecond=0))
+# query = "SELECT full_text FROM posts WHERE created_at >= '{}'".format(yesterday)
+query = "SELECT full_text FROM posts"
 
 cursor.execute(query)
-print(cursor.fetchall()[0][1])
+result = cursor.fetchall()
+print(result[0][0])
 
 
 print(mydb.database)
