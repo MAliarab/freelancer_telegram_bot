@@ -23,10 +23,12 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # Initialize states
-JOIN, MAIN_MENU, MANAGE_ADS,FREE_AD, NEW_AD, CHOOSE_CATEGORY, CHOOSE_UNIVERSITY, BACK_TO__MENU,CHOOSE_LOCATION,TEXT, ID, PAYMENT, SHOW_ADS = range(13)
+JOIN, MAIN_MENU, MANAGE_ADS,FREE_AD, NEW_AD, CHOOSE_CATEGORY, \
+     CHOOSE_UNIVERSITY, BACK_TO__MENU,CHOOSE_LOCATION,TEXT, ID, PAYMENT, SHOW_ADS, PAYED, EDIT = range(15)
 
 # Channel and Bot information
 CHANNEL_ID = "@tempchann"
+SUPPORT_ID = "@dashtab"
 # Static messages
 GREETING_MESSAGE = "سلام"+"\n"+"به ربات خوش آمدید"
 POLICY_MESSAGE = "لطفا ابتدا قوانین را بخوانید"
@@ -56,6 +58,8 @@ universities = [
     ["علم و صنعت", "شریف"],
     ["دیگر"],
 ]
+
+
 user_ads = [
     ['بازگشت به منو'],
 ]
@@ -202,6 +206,33 @@ def main_menu_fn(update: Update, context: CallbackContext) -> int:
             reply_markup=show_ads_markup
         )
         return SHOW_ADS
+
+    elif message == main_keyboard[0][0]:
+        print("heyyyy")
+        # q = "SELECT id, full_text FROM posts WHERE user_id = '{} AND active_flag={}' ORDER BY id DESC".format(user_id,1)
+        q = "SELECT id, full_text FROM posts where user_id={} and active_flag={} ORDER BY id DESC".format(user_id,1)
+        cursor.execute(q)
+        posts = cursor.fetchall()
+        posts_keyboard = [['بازگشت به منو']]
+        for post in posts:
+            posts_keyboard.append([str(post[0])+"|"+post[1]])
+        
+        if len(posts) == 0:
+            update.message.reply_text(
+                "شما آگهی ثبت شده ای ندارید",
+                reply_markup=main_menu_markup
+            )
+            return MAIN_MENU
+        else:
+            posts_markup = ReplyKeyboardMarkup(posts_keyboard,resize_keyboard=True)
+            update.message.reply_text(
+                "لیست آگهی های شما",
+                reply_markup=posts_markup
+            )
+
+            return MANAGE_ADS
+        
+
     elif message == main_keyboard[0][1]:
         update.message.reply_text(
             POLICY_MESSAGE,
@@ -246,10 +277,10 @@ def show_ads_fn(update: Update,context:CallbackContext) -> int:
 
 
 def manage_ads_fn(update: Update,context:CallbackContext) -> int:
-    query = update.callback_query
-    user_id = query.from_user.id
+    user_id = update.message.from_user.id
     result = context.bot.get_chat_member(chat_id=CHANNEL_ID,user_id=user_id)
-
+    post_id = int(update.message.text.split('|')[0])
+    
     if result['status'] != "member" and result['status'] != 'creator':
 
         update.message.reply_text(
@@ -258,12 +289,92 @@ def manage_ads_fn(update: Update,context:CallbackContext) -> int:
             )
 
         return JOIN
+    q = "SELECT * FROM posts WHERE id={}".format(post_id)
+    cursor.execute(q)
+    post_obj = cursor.fetchone()
+    if post_obj==None:
+        update.message.reply_text(
+            'آگهی یافت نشد'
+        )
+    
+    else:
+        print(post_obj[8])
+        if post_obj[8]==PAYMENT:
 
-    update.message.reply_text(
-        "لیست آگهی های شما:",
-    )
+            update.message.reply_text(
+                "در حال بررسی وضعیت آگهی ..."
+            )
+            
+            response = requests.post(
+                "https://gateway.zibal.ir/v1/request",
+                json={'merchant':'zibal','amount':100000,'callbackUrl':"https://aversi.ir/verify"}
+                )
+            if response.json()['result']==100:
+                context.user_data['trackId'] = response.json()['trackId']
+                payment_kb = [
+                    [
+                        InlineKeyboardButton("پرداخت بانکی",url="https://gateway.zibal.ir/start/{}".format(response.json()['trackId'])),
+                        InlineKeyboardButton("پرداخت با امتیاز", callback_data='freepay'),
+                    ],
+                    [InlineKeyboardButton("پرداخت کردم", callback_data='payed'),]
+                ]
+
+                payment_kb_markup = InlineKeyboardMarkup(payment_kb)
+
+                update.message.reply_text(
+                    "متن نهایی آگهی شما به صورت زیر نمایش داده خواهد شد: \n"+ post_obj[1],
+                    reply_markup=payment_kb_markup
+                )
+
+                context.user_data['final_message'] = post_obj[1]
+                context.user_data['post_id'] = post_id
+
+                return PAYMENT
+        elif post_obj[8]==PAYED:
+            edit_kb = [
+                [
+                    InlineKeyboardButton("آگهی واگذار شد",callback_data="assigned|"+str(post_id)),
+                    InlineKeyboardButton("حذف آگهی از لیست من", callback_data='delete|'+str(post_id)),
+                ],
+            ]
+            edit_kb_markup = InlineKeyboardMarkup(edit_kb)
+            update.message.reply_text(
+                    post_obj[1],
+                    reply_markup=edit_kb_markup
+            )
+            return EDIT
+
     # TODO change this to FOLLOW_AD stat
     return MAIN_MENU
+
+def edit_post_fn(update: Update,context:CallbackContext):
+
+    query = update.callback_query
+    print(query.data)
+    action, post_id = query.data.split("|")
+    if action=='assigned':
+        q = "SELECT message_id FROM posts WHERE id={}".format(int(post_id))
+        cursor.execute(q)
+        post_obj = cursor.fetchone()
+        context.bot.editMessageText(chat_id=CHANNEL_ID,message_id=post_obj[9],text=post_obj[3])
+        query.message.reply_text(
+            "تغییرات با موفقیت اعمال شد",
+            reply_markup=main_menu_markup
+        )
+        return MAIN_MENU
+    elif action=="delete":
+        q = "UPDATE posts SET active_flag={} WHERE id={}".format(False,post_id)
+        cursor.execute(q)
+        mydb.commit()
+        query.message.reply_text(
+            "آگهی از لیست آگهی های شما حذف گردید",
+            reply_markup=main_menu_markup
+        )
+        return MAIN_MENU
+
+
+        
+        
 
 def choose_category_fn(update: Update,context:CallbackContext) -> int:
 
@@ -376,7 +487,6 @@ def choose_id_fn(update: Update,context:CallbackContext) -> int:
 
             payment_kb_markup = InlineKeyboardMarkup(payment_kb)
 
-
             context.user_data['id'] = message
             final_message = "#"+context.user_data['category']+"\n"+"#"+context.user_data['university']+"\n"+ context.user_data['text']+"\n"+context.user_data['id']+"\n"+"----------------\n"+CHANNEL_ID
             update.message.reply_text(
@@ -386,7 +496,8 @@ def choose_id_fn(update: Update,context:CallbackContext) -> int:
             context.user_data['final_message'] = final_message
 
             # Add post to DB
-            query = "INSERT INTO posts (full_text,username,content,university,category,user_id,state,created_at) VALUES (%s,%s,%s,%s,%s,%s,%s,%s)"
+            query = "INSERT INTO posts (full_text,username,content,university,category,user_id,state,created_at,active_flag) \
+                 VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s)"
             values = (
                 context.user_data['final_message'],
                 context.user_data['id'],
@@ -395,11 +506,13 @@ def choose_id_fn(update: Update,context:CallbackContext) -> int:
                 context.user_data['category'],
                 user_id,
                 PAYMENT,
-                datetime.now()
+                datetime.now(),
+                True
                 )
             cursor.execute(query,values)
             mydb.commit()
-            
+            context.user_data['post_id'] = cursor.lastrowid
+
             return PAYMENT
 
 def check_payment_fn(update: Update,context:CallbackContext):
@@ -413,14 +526,20 @@ def check_payment_fn(update: Update,context:CallbackContext):
             json={'merchant':'zibal','trackId':context.user_data['trackId']}
             )
         if response.json()['result']==100 and response.json()['status'] == 1:
-            context.bot.sendMessage(chat_id=CHANNEL_ID,text=context.user_data['final_message'])
+            sent_message = context.bot.sendMessage(chat_id=CHANNEL_ID,text=context.user_data['final_message'])
             query.message.reply_text(
-                "آگهی شما ثبت شد و بعد از تایید ادمین بلافاصله در کانال قرار میگیرد"
+                "آگهی شما ثبت شد و بعد از تایید ادمین بلافاصله در کانال قرار میگیرد",
+                reply_markup=main_menu_markup
             )
+            print(context.user_data['post_id'],sent_message.message_id)
+            q = "UPDATE posts SET state = {},message_id={} WHERE id = {}".format(PAYED,sent_message.message_id, context.user_data['post_id'])
+            cursor.execute(q)
+            mydb.commit()
+            
             return MAIN_MENU
         else:
             query.bot.answer_callback_query(query.id,
-                text="پرداخت نکرده اید و یا پرداختتان موفق نبوده با پشتیبانی در تماس باشید" +"\n"+"@dashtab", show_alert=True
+                text="پرداخت نکرده اید و یا پرداختتان موفق نبوده با پشتیبانی در تماس باشید" +"\n"+SUPPORT_ID, show_alert=True
                 )
             # return PAYMENT
         
@@ -451,7 +570,7 @@ def main() -> None:
             MANAGE_ADS: [
                 CommandHandler('start', start),
                 MessageHandler(
-                    Filters.regex('^مدیریت آگهی ها 🗄$'), manage_ads_fn
+                    Filters.regex('^([\d]{1,})[|].+'), manage_ads_fn
                 ),
             ], 
             SHOW_ADS: [
@@ -487,7 +606,13 @@ def main() -> None:
                 CommandHandler('start', start),
                 MessageHandler(Filters.regex('^بازگشت به منو$'),back_to_main_menu),
                 CallbackQueryHandler(check_payment_fn)
+            ],
+            EDIT: [
+                CommandHandler('start', start),
+                MessageHandler(Filters.regex('^بازگشت به منو$'),back_to_main_menu),
+                CallbackQueryHandler(edit_post_fn)
             ]
+            
             # TYPING_CHOICE: [
             #     MessageHandler(
             #         Filters.text & ~(Filters.command | Filters.regex('^Done$')), regular_choice

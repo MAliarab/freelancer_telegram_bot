@@ -110,17 +110,25 @@ cursor = mydb.cursor()
 # query = "INSERT INTO posts (full_text,username,category,user_id) VALUES (%s,%s,%s,%s)"
 # vales = ('درود دوباره به شما','@haji','انجام کار ', 3)
 
-# cursor.execute(query,vales)
-# mydb.commit()
-yesterday = datetime.now() - timedelta(days=1)
-print(yesterday.replace(microsecond=0))
+# res = cursor.execute(query,vales)
+# res2 = mydb.commit()
+# yesterday = datetime.now() - timedelta(days=1)
+# print(yesterday.replace(microsecond=0))
 # query = "SELECT full_text FROM posts WHERE created_at >= '{}'".format(yesterday)
-query = "SELECT full_text FROM posts"
-
-cursor.execute(query)
+# query = "SELECT id,full_text FROM posts WHERE id={}".format(5)
+query = "SELECT id, full_text FROM posts WHERE user_id = '{} AND active_flag={}' ORDER BY id DESC".format(1736424924,1)
+q2 = "SELECT * FROM karbotdb.posts where user_id={} and active_flag={} ORDER BY id DESC".format(1736424924,1)
+cursor.execute(q2)
 result = cursor.fetchall()
-print(result[0][0])
+print(result)
 
 
-print(mydb.database)
+# print(mydb.database)
 
+# text = "2||hello from"
+# text2 = "new text"
+# post_id = text2.split('||')
+# print(post_id)
+# import re
+# print(bool(re.match('^([\d]{1,})[|].+',text)))
+# print("b" in "ali")
