@@ -26,12 +26,19 @@ logger = logging.getLogger(__name__)
 JOIN, MAIN_MENU, MANAGE_ADS,FREE_AD, NEW_AD, CHOOSE_CATEGORY, \
      CHOOSE_UNIVERSITY, BACK_TO__MENU,CHOOSE_LOCATION,TEXT, ID, PAYMENT, SHOW_ADS, PAYED, EDIT = range(15)
 
+# Global variables
+COIN_LIMIT = 1
 # Channel and Bot information
 CHANNEL_ID = "@tempchann"
+BOT_ID = "btiibot"
 SUPPORT_ID = "@dashtab"
 # Static messages
-GREETING_MESSAGE = "سلام"+"\n"+"به ربات خوش آمدید"
-POLICY_MESSAGE = "لطفا ابتدا قوانین را بخوانید"
+GREETING_MESSAGE = "سلام"+"\n"+"به ربات لیبرونا خوش اومدی"
+POLICY_MESSAGE = """لطفا اول قوانین رو خوب بخونید
+                    قانون ۱
+                    قانون ۲
+                    قانون ۳
+                    """ 
 
 # Keyboard and matkup definitions 
 
@@ -67,7 +74,7 @@ user_ads = [
 show_ads_kb = [
     [
         InlineKeyboardButton("آگهی های ۱ روز اخیر", callback_data=1),
-        InlineKeyboardButton("آگهی های ۲ روز اخیر", callback_data=2),
+        InlineKeyboardButton("آگهی های ۳ روز اخیر", callback_data=3),
     ],
     [InlineKeyboardButton("تمام آگهی ها", callback_data=5),]
 ]
@@ -90,24 +97,34 @@ cursor = mydb.cursor()
 
 
 def start(update: Update, context: CallbackContext) -> int:
-    # TODO set invitation coin for user
-    # print(update.message.text.split(' ')[1])
-    # print(type(update.message.text.split(' ')[1]))
-    # ---------------------------------
 
+    invited_by = None
+    if len(update.message.text.split(' '))>1:
+        invited_by = int(update.message.text.split(' ')[1])
+    # ---------------------------------
 
     user_id = update.message.from_user.id
     chat_id = update.message.chat.id
+    username = update.message.from_user.username
+    firstname = update.message.from_user.first_name
+    lastname = update.message.from_user.last_name
     
     # Add user to DB if there is not in DB
     q1 = "SELECT * FROM users WHERE id={}".format(user_id)
     cursor.execute(q1)
     user = cursor.fetchall()
     if len(user) == 0:
-        q2 = ("INSERT INTO users (id,coin,chat_id) VALUES (%s,%s,%s)")
-        values = (user_id,0,chat_id)
+
+        q2 = ("INSERT INTO users (id,coin,chat_id,firstname,username,lastname,invited_by,joined_at) VALUES (%s,%s,%s,%s,%s,%s,%s,%s)")
+        values = (user_id,0,chat_id,firstname,username,lastname,invited_by,datetime.now())
         cursor.execute(q2,values)
         mydb.commit()
+        # add a coin to inviter 
+        if invited_by:
+            q3 = ("UPDATE users SET coin=coin+{} WHERE id={}").format(1,invited_by)
+            cursor.execute(q3)
+            mydb.commit()
+
     
     result = context.bot.get_chat_member(chat_id=CHANNEL_ID,user_id=user_id)
     
@@ -202,13 +219,12 @@ def main_menu_fn(update: Update, context: CallbackContext) -> int:
     message = update.message.text   
     if message == main_keyboard[2][0]:
         update.message.reply_text(
-            "تعداد آگهی هایی که میخواهید نمایش داده شود را انتخاب کنید",
+            "آگهی های منتشر شده تا از چه تاریخی را میخواهید؟",
             reply_markup=show_ads_markup
         )
         return SHOW_ADS
 
     elif message == main_keyboard[0][0]:
-        print("heyyyy")
         # q = "SELECT id, full_text FROM posts WHERE user_id = '{} AND active_flag={}' ORDER BY id DESC".format(user_id,1)
         q = "SELECT id, full_text FROM posts where user_id={} and active_flag={} ORDER BY id DESC".format(user_id,1)
         cursor.execute(q)
@@ -245,21 +261,37 @@ def main_menu_fn(update: Update, context: CallbackContext) -> int:
         
         return CHOOSE_CATEGORY
     elif message == main_keyboard[1][0]:
+        invite_message = "میتونی با دعوت دوستات به ربات امتیاز بگیری و با هر {} امتیاز یه آگهی رایگان ثبت کنی".format(COIN_LIMIT)+"\n❇️ کسی که دعوت میکنی باید عضو جدید باشه" + \
+            "\nبا استفاده از لینک اختصاصی خودت دوستاتو دعوت کن 👇👇👇"
+
         update.message.reply_text(
-            "با استفاده از لینک زیر دوستاتو دعوت کن و جایزه بگیر",
+            invite_message,
             # TODO add new button list for this
             reply_markup=user_ads_markup
         )
+        invite_special_link = "دانشجوهایی که دنبال کار پاره وقت هستن، توو این کانال کلی پروژه و تمرین هست که میتونی انجام بدی و درآمد عالی داشته باشی. خودتونم اگه نیاز به کمک داشته باشید میتونید از دانشجوهای دیگه کمک بگیرید "+ \
+            "\nاز طریق لینک زیر عضو شو:\n"+ "https://t.me/{}?start={}".format(BOT_ID,user_id)
+        update.message.reply_text(
+            invite_special_link,
+            reply_markup=user_ads_markup
+        )
+        q = "SELECT coin FROM users WHERE id={}".format(user_id)
+        cursor.execute(q)
+        coin = cursor.fetchone()
+        update.message.reply_text(
+            "💰 امتیاز شما: {}".format(coin[0])
+        )
         
-        return FREE_AD
+        return MAIN_MENU
 
 def show_ads_fn(update: Update,context:CallbackContext) -> int:
 
     query = update.callback_query
-    
-    date = datetime.now()-timedelta(days=int(query.data))
-    
-    q = "SELECT full_text from posts WHERE created_at >= '{}'".format(date)
+    try:
+        date = datetime.now()-timedelta(days=int(query.data))
+    except Exception as e:
+        print("exception occured")
+    q = "SELECT full_text from posts WHERE active_flag = {} AND created_at >= '{}' AND bot_pub = {}".format(True, date, True)
 
     cursor.execute(q)
 
@@ -298,7 +330,6 @@ def manage_ads_fn(update: Update,context:CallbackContext) -> int:
         )
     
     else:
-        print(post_obj[8])
         if post_obj[8]==PAYMENT:
 
             update.message.reply_text(
@@ -311,14 +342,26 @@ def manage_ads_fn(update: Update,context:CallbackContext) -> int:
                 )
             if response.json()['result']==100:
                 context.user_data['trackId'] = response.json()['trackId']
-                payment_kb = [
-                    [
-                        InlineKeyboardButton("پرداخت بانکی",url="https://gateway.zibal.ir/start/{}".format(response.json()['trackId'])),
-                        InlineKeyboardButton("پرداخت با امتیاز", callback_data='freepay'),
-                    ],
-                    [InlineKeyboardButton("پرداخت کردم", callback_data='payed'),]
-                ]
-
+                if post_obj[12]==False: # if post published in bot
+                    payment_kb = [
+                        [
+                            InlineKeyboardButton("پرداخت بانکی",url="https://gateway.zibal.ir/start/{}".format(response.json()['trackId'])),
+                            InlineKeyboardButton("پرداخت با امتیاز", callback_data='freepay'),
+                        ],
+                        [InlineKeyboardButton("پرداخت کردم", callback_data='payed'),],
+                        [InlineKeyboardButton("انتشار در ربات (رایگان)", callback_data='botpub'),],
+                        [InlineKeyboardButton("حذف آگهی از لیست من", callback_data='delete|'+str(post_id)),],
+                        
+                    ]
+                else:
+                    payment_kb = [
+                        [
+                            InlineKeyboardButton("پرداخت بانکی",url="https://gateway.zibal.ir/start/{}".format(response.json()['trackId'])),
+                            InlineKeyboardButton("پرداخت با امتیاز", callback_data='freepay'),
+                        ],
+                        [InlineKeyboardButton("پرداخت کردم", callback_data='payed'),],
+                        [InlineKeyboardButton("حذف آگهی از لیست من", callback_data='delete|'+str(post_id)),],
+                    ]
                 payment_kb_markup = InlineKeyboardMarkup(payment_kb)
 
                 update.message.reply_text(
@@ -350,13 +393,13 @@ def manage_ads_fn(update: Update,context:CallbackContext) -> int:
 def edit_post_fn(update: Update,context:CallbackContext):
 
     query = update.callback_query
-    print(query.data)
     action, post_id = query.data.split("|")
     if action=='assigned':
-        q = "SELECT message_id FROM posts WHERE id={}".format(int(post_id))
+        q = "SELECT * FROM posts WHERE id={}".format(int(post_id))
         cursor.execute(q)
         post_obj = cursor.fetchone()
-        context.bot.editMessageText(chat_id=CHANNEL_ID,message_id=post_obj[9],text=post_obj[3])
+        
+        context.bot.editMessageText(chat_id=CHANNEL_ID,message_id=post_obj[9],text=post_obj[3]+"\n🛑واگذار شد"+"---------------\n"+CHANNEL_ID)
         query.message.reply_text(
             "تغییرات با موفقیت اعمال شد",
             reply_markup=main_menu_markup
@@ -414,7 +457,7 @@ def choose_university_fn(update: Update,context:CallbackContext) -> int:
     message = update.message.text
     context.user_data['university'] = message.replace(' ','_')
     update.message.reply_text(
-        "متنی آگهیت رو بفرست",
+        "متن آگهی رو بفرست",
         reply_markup=user_ads_markup
     )
     return TEXT
@@ -468,7 +511,9 @@ def choose_id_fn(update: Update,context:CallbackContext) -> int:
         # payment configs
         
         update.message.reply_text(
-            "در حال ایجاد آگهی ..."
+            "مبلغ انتشار آگهی تو کانال لیبرونا ۱۰ هزار تومنه که میتونی با گزینه ی پرداخت بانکی و یا پرداخت با امتیاز آگهی خودتو تو کانال منتشر کنی" + \
+                "\nاما یه راه دیگه هم هست\nمیتونی با گزینه ی انتشار در ربات آگهی تو به صورت **رایگان** تو ربات منتشر کنی و بقیه هم میتونن از طریق ربات آگهی تو ببینن"
+            "\nدر حال ایجاد آگهی ..."
         )
         
         response = requests.post(
@@ -482,7 +527,8 @@ def choose_id_fn(update: Update,context:CallbackContext) -> int:
                     InlineKeyboardButton("پرداخت بانکی",url="https://gateway.zibal.ir/start/{}".format(response.json()['trackId'])),
                     InlineKeyboardButton("پرداخت با امتیاز", callback_data='freepay'),
                 ],
-                [InlineKeyboardButton("پرداخت کردم", callback_data='payed'),]
+                [InlineKeyboardButton("پرداخت کردم", callback_data='payed'),],
+                [InlineKeyboardButton("انتشار در ربات (رایگان)", callback_data='botpub'),]
             ]
 
             payment_kb_markup = InlineKeyboardMarkup(payment_kb)
@@ -496,8 +542,8 @@ def choose_id_fn(update: Update,context:CallbackContext) -> int:
             context.user_data['final_message'] = final_message
 
             # Add post to DB
-            query = "INSERT INTO posts (full_text,username,content,university,category,user_id,state,created_at,active_flag) \
-                 VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s)"
+            query = "INSERT INTO posts (full_text,username,content,university,category,user_id,state,created_at,active_flag,bot_pub,channel_pub) \
+                 VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)"
             values = (
                 context.user_data['final_message'],
                 context.user_data['id'],
@@ -507,7 +553,9 @@ def choose_id_fn(update: Update,context:CallbackContext) -> int:
                 user_id,
                 PAYMENT,
                 datetime.now(),
-                True
+                True,
+                False,
+                False,
                 )
             cursor.execute(query,values)
             mydb.commit()
@@ -517,10 +565,13 @@ def choose_id_fn(update: Update,context:CallbackContext) -> int:
 
 def check_payment_fn(update: Update,context:CallbackContext):
 
+
     query = update.callback_query
-    # print(query.id)
-    # print(query.data)
-    if query!=None and query.data == "payed":
+    user_id = query.from_user.id
+    if query!=None and "delete" in query.data:
+        edit_post_fn(update,context)
+        return MAIN_MENU
+    elif query!=None and query.data == "payed":
         response = requests.post(
             "https://gateway.zibal.ir/v1/verify",
             json={'merchant':'zibal','trackId':context.user_data['trackId']}
@@ -531,8 +582,10 @@ def check_payment_fn(update: Update,context:CallbackContext):
                 "آگهی شما ثبت شد و بعد از تایید ادمین بلافاصله در کانال قرار میگیرد",
                 reply_markup=main_menu_markup
             )
-            print(context.user_data['post_id'],sent_message.message_id)
-            q = "UPDATE posts SET state = {},message_id={} WHERE id = {}".format(PAYED,sent_message.message_id, context.user_data['post_id'])
+            # print(context.user_data['post_id'],sent_message.message_id)
+            q = "UPDATE posts SET state = {},message_id={},channel_pub={},bot_pub={} WHERE id = {}".format(
+                PAYED,sent_message.message_id, context.user_data['post_id'],True,True
+                )
             cursor.execute(q)
             mydb.commit()
             
@@ -542,9 +595,34 @@ def check_payment_fn(update: Update,context:CallbackContext):
                 text="پرداخت نکرده اید و یا پرداختتان موفق نبوده با پشتیبانی در تماس باشید" +"\n"+SUPPORT_ID, show_alert=True
                 )
             # return PAYMENT
+    elif query!=None and query.data == "botpub":
+        q = "UPDATE posts SET bot_pub={} WHERE id = {}".format(True,context.user_data['post_id'])
+        cursor.execute(q)
+        mydb.commit()
+        query.message.reply_text(
+            "آگهی شما با موفقیت در ربات منتشر شد و از بخش دیدن آگهی ها در منو اصلی قابل مشاهده است",
+            reply_markup=main_menu_markup,
+        )
+        return MAIN_MENU
         
-    else:
-        print('not payed')
+    elif query!=None and query.data == "freepay":
+        q = "SELECT coin from users WHERE id={}".format(user_id)
+        cursor.execute(q)
+        coin = cursor.fetchone()[0]
+        if coin >= COIN_LIMIT:
+            sent_message = context.bot.sendMessage(chat_id=CHANNEL_ID,text=context.user_data['final_message'])
+            query.message.reply_text(
+                "آگهی شما ثبت شد و بعد از تایید ادمین بلافاصله در کانال قرار میگیرد",
+                reply_markup=main_menu_markup
+            )
+            q2 = "UPDATE users SET coin=coin-{} WHERE id={}".format(COIN_LIMIT,user_id)
+            cursor.execute(q2)
+            mydb.commit()
+            return MAIN_MENU
+        else:
+            query.bot.answer_callback_query(query.id,
+                text="امتیاز شما کافی نیست حداقل باید {} امتیاز داشته باشید".format(COIN_LIMIT), show_alert=True
+            )
 
 def main() -> None:
     # Create the Updater and pass it your bot's token.
@@ -566,41 +644,50 @@ def main() -> None:
                 MessageHandler(
                     Filters.regex('^(مدیریت آگهی ها 🗄|ثبت آگهی جدید 📋|ثبت آگهی رایگان 🆓|دیدن آگهی ها)$'), main_menu_fn
                 ),
+                MessageHandler(Filters.regex('^بازگشت به منو$'),back_to_main_menu),
             ],
             MANAGE_ADS: [
                 CommandHandler('start', start),
                 MessageHandler(
                     Filters.regex('^([\d]{1,})[|].+'), manage_ads_fn
                 ),
+                MessageHandler(Filters.regex('^بازگشت به منو$'),back_to_main_menu),
             ], 
             SHOW_ADS: [
                 CallbackQueryHandler(show_ads_fn),
                 MessageHandler(Filters.regex('^بازگشت به منو$'),back_to_main_menu),
+                MessageHandler(
+                    Filters.regex('^(مدیریت آگهی ها 🗄|ثبت آگهی جدید 📋|ثبت آگهی رایگان 🆓|دیدن آگهی ها)$'), main_menu_fn
+                ),
 
             ],   
             CHOOSE_CATEGORY: [
                 CommandHandler('start', start),
                 MessageHandler(
-                    Filters.regex('^(خریدار|فروشنده|انجام دهنده|درخواست کننده|فرصت شغلی)$') , choose_category_fn
+                    Filters.regex('^(خریدار|فروشنده|انجام دهنده|درخواست کننده|فرصت شغلی)$') , choose_category_fn,
                 ),
+                MessageHandler(Filters.regex('^بازگشت به منو$'),back_to_main_menu),
             ],
             CHOOSE_UNIVERSITY: [
                 CommandHandler('start', start),
                 MessageHandler(
-                    Filters.text & ~(Filters.command | Filters.regex('#فوری')) , choose_university_fn
+                    Filters.text & ~(Filters.command | Filters.regex('بازگشت به منو')) , choose_university_fn
                 ),
+                MessageHandler(Filters.regex('^بازگشت به منو$'),back_to_main_menu),
             ],
             TEXT: [
                 CommandHandler('start', start),
                 MessageHandler(
-                    Filters.text , choose_text_fn
+                    Filters.text & ~(Filters.command | Filters.regex('بازگشت به منو')) , choose_text_fn
                 ),
+                MessageHandler(Filters.regex('^بازگشت به منو$'),back_to_main_menu),
             ],
             ID: [
                 CommandHandler('start', start),
                 MessageHandler(
-                    Filters.text , choose_id_fn
+                    Filters.text & ~(Filters.command | Filters.regex('بازگشت به منو')) , choose_id_fn
                 ),
+                MessageHandler(Filters.regex('^بازگشت به منو$'),back_to_main_menu),
             ],
             PAYMENT: [
                 CommandHandler('start', start),
