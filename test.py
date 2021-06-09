@@ -115,13 +115,17 @@ cursor = mydb.cursor()
 # yesterday = datetime.now() - timedelta(days=1)
 # print(yesterday.replace(microsecond=0))
 # query = "SELECT full_text FROM posts WHERE created_at >= '{}'".format(yesterday)
-# query = "SELECT id,full_text FROM posts WHERE id={}".format(5)
+query = "SELECT id,full_text FROM posts WHERE message_id = 2"
 # query = "SELECT id, full_text FROM posts WHERE user_id = '{} AND active_flag={}' ORDER BY id DESC".format(1736424924,1)
-# q2 = "SELECT * FROM karbotdb.posts where user_id={} and active_flag={} ORDER BY id DESC".format(1736424924,1)
-# cursor.execute(q2)
-# result = cursor.fetchall()
-# print(result)
-
+# q = "UPDATE posts SET state = {},message_id={},channel_pub={},bot_pub={} WHERE id = {}".format(
+#     13,25, 8,True,True
+#     )
+cursor.execute(query)
+result = cursor.fetchall()
+# mydb.commit()
+print(result)
+# for chat_id in result:
+#     print(chat_id[0])
 
 # print(mydb.database)
 
@@ -132,4 +136,4 @@ cursor = mydb.cursor()
 # import re
 # print(bool(re.match('^([\d]{1,})[|].+',text)))
 # print("b" in "ali")
-print("delete" in "delete|1")
+# print("delete" in "delete|1")
